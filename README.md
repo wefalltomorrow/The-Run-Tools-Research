@@ -86,6 +86,7 @@
    <ul>
       <li><a target="_blank" rel="noopener noreferrer nofollow" href="http://www.tocaedit.com/2012/08/need-for-speed-run-camera-control.html"><em>ToCA EDIT Camera Control</em></a></li>
       <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://nfsmods.xyz/mod/3472"><em>Camera & Cinematic Tools</em></a></li>
+      <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://nfsmods.xyz/mod/6287"><em>The Supercar Run [Rework by Glonce]</em></a></li>
       <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://nfsmods.xyz/mod/3251"><em>Debug Menu & Intro Movie Skip</em></a></li>
       <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://blog.naver.com/PostView.nhn?isHttpsRedirect=true&blogId=ktw051&logNo=10185640112"><em>Unrestricted Car Roster</em></a></li>
       <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://nfsmods.xyz/mod/282"><em>Basic Car Changer</em></a></li>
@@ -119,6 +120,7 @@
    <ul>
       <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://youtu.be/E2EPTU13f34"><em>Need For Speed The Run Making Of</em></a></li>
       <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://youtu.be/kmILxl2Ov1w"><em>Need For Speed The Run The Sounds Of</em></a></li>
+      <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://youtu.be/_oeqp2Nw1Ig?si=lbE2FiO-lm2w5TlS"><em>Need For Speed The Run Never Released Trailer</em></a></li>
       <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://vimeo.com/25533404"><em>Need For Speed The Run Sizzle Reel</em></a></li>
       <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://vimeo.com/37715564"><em>Need For Speed The Run 3D Map Animation</em></a></li>
       <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://youtu.be/o-7aA7gfPsM"><em>Need For Speed The Run iOS Trailer</em></a></li>
