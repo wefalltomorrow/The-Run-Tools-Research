@@ -85,10 +85,11 @@
    <hr>
    <ul>
       <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://nfsmods.xyz/mod/5541"><em>LAN Multiplayer Revival</em></a></li>
+      <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://nfsmods.xyz/mod/6287"><em>The Supercar Run [Rework]</em></a></li>
       <li><a target="_blank" rel="noopener noreferrer nofollow" href="http://www.tocaedit.com/2012/08/need-for-speed-run-camera-control.html"><em>ToCA EDIT Camera Control</em></a></li>
       <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://nfsmods.xyz/mod/3472"><em>Camera & Cinematic Tools</em></a></li>
-      <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://nfsmods.xyz/mod/6287"><em>The Supercar Run [Rework]</em></a></li>
       <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://nfsmods.xyz/mod/3251"><em>Debug Menu & Intro Movie Skip</em></a></li>
+      <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://nfsmods.xyz/mod/5373 "><em>HQ Texture & Livery Pack</em></a></li>
       <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://blog.naver.com/PostView.nhn?isHttpsRedirect=true&blogId=ktw051&logNo=10185640112"><em>Unrestricted Car Roster</em></a></li>
       <li><a target="_blank" rel="noopener noreferrer nofollow" href="https://nfsmods.xyz/mod/282"><em>Basic Car Changer</em></a></li>
    </ul>
