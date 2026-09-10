@@ -1,0 +1,53 @@
+name: Analyze Xbox 360 Italian Pack
+
+on:
+  push:
+    branches:
+      - italian-pack-port-research
+    paths:
+      - tools/analyze_italian_pack.py
+      - .github/workflows/analyze-italian-pack.yml
+  workflow_dispatch:
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout research branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install downloader
+        run: python -m pip install --disable-pip-version-check gdown
+
+      - name: Fetch Frostbite 2 research scripts
+        run: |
+          git clone --depth 1 https://github.com/NicknineTheEagle/Frostbite-Scripts.git Frostbite-Scripts
+
+      - name: Download user-supplied Xbox 360 Italian Pack archive
+        run: |
+          gdown --id 1DEbOJ_T8fXjZLMhFYWNGLO7iyQInHMQZ -O Unpacked.zip
+          ls -lh Unpacked.zip
+
+      - name: Analyze archive metadata
+        run: |
+          python tools/analyze_italian_pack.py \
+            Unpacked.zip \
+            --frostbite-scripts Frostbite-Scripts \
+            --out-dir analysis-output
+
+      - name: Upload metadata report
+        uses: actions/upload-artifact@v4
+        with:
+          name: xbox360-italian-pack-analysis
+          path: |
+            analysis-output/italian-pack-analysis.txt
+            analysis-output/italian-pack-analysis.json
+          if-no-files-found: error
+          retention-days: 30
