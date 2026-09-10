@@ -32,7 +32,7 @@ jobs:
 
       - name: Download user-supplied Xbox 360 Italian Pack archive
         run: |
-          gdown --id 1DEbOJ_T8fXjZLMhFYWNGLO7iyQInHMQZ -O Unpacked.zip
+          gdown 1DEbOJ_T8fXjZLMhFYWNGLO7iyQInHMQZ -O Unpacked.zip
           ls -lh Unpacked.zip
 
       - name: Analyze archive metadata
