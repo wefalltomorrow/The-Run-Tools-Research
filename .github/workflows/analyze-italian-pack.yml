@@ -6,6 +6,7 @@ on:
       - italian-pack-port-research
     paths:
       - tools/analyze_italian_pack.py
+      - tools/catalog_italian_pack_new_bundles.py
       - .github/workflows/analyze-italian-pack.yml
   workflow_dispatch:
 
@@ -35,19 +36,26 @@ jobs:
           gdown 1DEbOJ_T8fXjZLMhFYWNGLO7iyQInHMQZ -O Unpacked.zip
           ls -lh Unpacked.zip
 
-      - name: Analyze archive metadata
+      - name: Analyze archive and TOC metadata
         run: |
           python tools/analyze_italian_pack.py \
             Unpacked.zip \
             --frostbite-scripts Frostbite-Scripts \
             --out-dir analysis-output
 
-      - name: Upload metadata report
+      - name: Catalog contents of standalone new DLC bundles
+        run: |
+          python tools/catalog_italian_pack_new_bundles.py \
+            Unpacked.zip \
+            --frostbite-scripts Frostbite-Scripts \
+            --out-dir analysis-output
+
+      - name: Upload metadata reports
         uses: actions/upload-artifact@v4
         with:
           name: xbox360-italian-pack-analysis
           path: |
-            analysis-output/italian-pack-analysis.txt
-            analysis-output/italian-pack-analysis.json
+            analysis-output/*.txt
+            analysis-output/*.json
           if-no-files-found: error
           retention-days: 30
