@@ -30,7 +30,7 @@ jobs:
         run: |
           set -euxo pipefail
           mkdir -p parts
-          gdown --folder 'https://drive.google.com/drive/folders/1TC07r7yTtEJSAVDqkmkwm3SUoC_zJtSA' -O parts --remaining-ok
+          gdown --folder 'https://drive.google.com/drive/folders/1TC07r7yTtEJSAVDqkmkwm3SUoC_zJtSA' -O parts
           find parts -maxdepth 1 -type f -printf '%f\t%s\n' | sort > downloaded-parts.tsv
           cat downloaded-parts.tsv
           count=$(find parts -maxdepth 1 -type f -name 'Need for Speed The Run.7z.*' | wc -l)
