@@ -1,0 +1,121 @@
+name: Inventory full PC game reference
+
+on:
+  push:
+    branches:
+      - full-game-reference-inventory
+  workflow_dispatch:
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y p7zip-full python3-pip
+          python3 -m pip install --user --upgrade gdown
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Show disk before download
+        run: df -h
+
+      - name: Download split archive from shared Google Drive folder
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p parts
+          gdown --folder 'https://drive.google.com/drive/folders/1TC07r7yTtEJSAVDqkmkwm3SUoC_zJtSA' -O parts --remaining-ok
+          find parts -maxdepth 1 -type f -printf '%f\t%s\n' | sort > downloaded-parts.tsv
+          cat downloaded-parts.tsv
+          count=$(find parts -maxdepth 1 -type f -name 'Need for Speed The Run.7z.*' | wc -l)
+          test "$count" -eq 38
+          test -f 'parts/Need for Speed The Run.7z.001'
+          test -f 'parts/Need for Speed The Run.7z.038'
+          sha256sum parts/'Need for Speed The Run.7z.'* > part-sha256.txt
+          df -h
+
+      - name: Validate and inventory split 7z archive
+        shell: bash
+        run: |
+          set -euxo pipefail
+          archive='parts/Need for Speed The Run.7z.001'
+          7z l -ba "$archive" > full-game-7z-list.txt
+          7z l -slt "$archive" > full-game-7z-slt.txt
+          7z t "$archive" | tee full-game-7z-test.txt
+
+      - name: Build machine-readable archive inventory
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import csv
+
+          src = Path('full-game-7z-slt.txt').read_text(errors='replace').splitlines()
+          rows = []
+          rec = {}
+          wanted = ['Path','Size','Packed Size','Modified','Attributes','CRC','Encrypted','Method','Block']
+          for line in src:
+              if ' = ' in line:
+                  k, v = line.split(' = ', 1)
+                  rec[k] = v
+              elif not line.strip() and rec:
+                  if 'Path' in rec and rec.get('Folder') != '+':
+                      rows.append({k: rec.get(k, '') for k in wanted})
+                  rec = {}
+          if rec and 'Path' in rec and rec.get('Folder') != '+':
+              rows.append({k: rec.get(k, '') for k in wanted})
+
+          with open('full-game-archive-inventory.csv', 'w', newline='', encoding='utf-8-sig') as f:
+              w = csv.DictWriter(f, fieldnames=wanted)
+              w.writeheader(); w.writerows(rows)
+
+          total = sum(int(r['Size'] or 0) for r in rows)
+          print(f'Files: {len(rows)}')
+          print(f'Uncompressed bytes: {total}')
+          PY
+
+      - name: Extract useful small/reference file types
+        shell: bash
+        run: |
+          set -euxo pipefail
+          archive='parts/Need for Speed The Run.7z.001'
+          mkdir -p inspect
+          7z x "$archive" -oinspect -y -r \
+            '*.toc' '*.cat' '*.ini' '*.cfg' '*.xml' '*.txt' '*.json' '*.csv' '*.md' \
+            '*.exe' '*.dll' '*.asi' '*.bat' '*.cmd' '*.ps1' '*.reg' \
+            | tee selective-extract.txt
+          find inspect -type f -printf '%P\t%s\n' | sort > selective-files.tsv
+          find inspect -type f -print0 | sort -z | xargs -0 sha256sum > selective-sha256.txt || true
+          du -sh inspect || true
+          df -h
+
+      - name: Upload inventory
+        uses: actions/upload-artifact@v4
+        with:
+          name: NFSTR-full-game-reference-inventory
+          path: |
+            downloaded-parts.tsv
+            part-sha256.txt
+            full-game-7z-list.txt
+            full-game-7z-slt.txt
+            full-game-7z-test.txt
+            full-game-archive-inventory.csv
+            selective-extract.txt
+            selective-files.tsv
+            selective-sha256.txt
+          if-no-files-found: error
+          compression-level: 9
+
+      - name: Upload selected reference files
+        uses: actions/upload-artifact@v4
+        with:
+          name: NFSTR-full-game-reference-selected-files
+          path: inspect/
+          if-no-files-found: warn
+          compression-level: 6
