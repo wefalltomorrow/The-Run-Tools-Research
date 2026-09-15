@@ -1,6 +1,5 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-#include <psapi.h>
 #include <cstdio>
 #include <cstdint>
 #include <cstdarg>
@@ -19,6 +18,8 @@ static const char* kBuffaloGap  = "_c4/Levels/Level_2300_BuffaloGap/Level_2300_B
 
 static FILE* gLog = nullptr;
 static std::mutex gLogMutex;
+static std::mutex gHitsMutex;
+static std::vector<uintptr_t> gLastHits;
 static std::vector<uintptr_t> gPatched;
 static volatile bool gRunning = true;
 
@@ -151,6 +152,18 @@ static std::vector<uintptr_t> FindWritableCString(const char* needle)
     return hits;
 }
 
+static void CacheHits(const std::vector<uintptr_t>& hits)
+{
+    std::lock_guard<std::mutex> lock(gHitsMutex);
+    gLastHits = hits;
+}
+
+static std::vector<uintptr_t> GetCachedHits()
+{
+    std::lock_guard<std::mutex> lock(gHitsMutex);
+    return gLastHits;
+}
+
 static void DumpPointerRefs(uintptr_t target)
 {
     SYSTEM_INFO si{};
@@ -199,6 +212,7 @@ static void DumpPointerRefs(uintptr_t target)
 static void ScanDesertHills(bool withRefs)
 {
     auto hits = FindWritableCString(kDesertHills);
+    CacheHits(hits);
     Log("---- DESERT HILLS LIVE SCAN: %zu writable private/mapped exact string(s) ----", hits.size());
     for (size_t i = 0; i < hits.size(); ++i) {
         MEMORY_BASIC_INFORMATION mbi{};
@@ -210,12 +224,31 @@ static void ScanDesertHills(bool withRefs)
     }
 }
 
+static bool StillDesertHills(uintptr_t addr)
+{
+    const size_t n = std::strlen(kDesertHills) + 1;
+    std::vector<char> buf(n);
+    SIZE_T got = 0;
+    return ReadProcessMemory(GetCurrentProcess(), reinterpret_cast<LPCVOID>(addr), buf.data(), n, &got) &&
+           got == n && std::memcmp(buf.data(), kDesertHills, n) == 0;
+}
+
 static void PatchToBuffaloGap()
 {
     const size_t oldLen = std::strlen(kDesertHills);
     const size_t newLen = std::strlen(kBuffaloGap);
-    auto hits = FindWritableCString(kDesertHills);
-    Log("---- PATCH REQUEST: Desert Hills -> Buffalo Gap; hits=%zu ----", hits.size());
+
+    auto hits = GetCachedHits();
+    bool usedCache = !hits.empty();
+    if (hits.empty()) {
+        Log("F8: no cached hits; doing one fast string scan...");
+        hits = FindWritableCString(kDesertHills);
+        CacheHits(hits);
+    }
+
+    Log("---- PATCH REQUEST: Desert Hills -> Buffalo Gap; candidates=%zu source=%s ----",
+        hits.size(), usedCache ? "cache" : "fresh-scan");
+
     if (newLen > oldLen) {
         Log("internal error: replacement is longer than source");
         return;
@@ -223,16 +256,26 @@ static void PatchToBuffaloGap()
 
     std::vector<char> replacement(oldLen + 1, 0);
     std::memcpy(replacement.data(), kBuffaloGap, newLen);
+
+    unsigned patched = 0;
+    unsigned stale = 0;
     for (uintptr_t addr : hits) {
+        if (!StillDesertHills(addr)) {
+            ++stale;
+            continue;
+        }
         SIZE_T written = 0;
         if (WriteProcessMemory(GetCurrentProcess(), reinterpret_cast<LPVOID>(addr), replacement.data(), replacement.size(), &written) && written == replacement.size()) {
             gPatched.push_back(addr);
+            ++patched;
             Log("  patched 0x%08X", (unsigned)addr);
         } else {
             Log("  FAILED to patch 0x%08X error=%lu written=%zu", (unsigned)addr, GetLastError(), (size_t)written);
         }
     }
-    MessageBeep(MB_OK);
+
+    Log("PATCH COMPLETE: patched=%u stale/skipped=%u", patched, stale);
+    MessageBeep(patched ? MB_ICONASTERISK : MB_ICONHAND);
 }
 
 static void RestorePatched()
@@ -247,15 +290,16 @@ static void RestorePatched()
             Log("  FAILED to restore 0x%08X error=%lu", (unsigned)addr, GetLastError());
     }
     gPatched.clear();
+    CacheHits({});
 }
 
 static DWORD WINAPI ProbeThread(LPVOID)
 {
     char exePath[MAX_PATH]{};
     GetModuleFileNameA(nullptr, exePath, MAX_PATH);
-    Log("NFSTR ITC Runtime Probe v1");
+    Log("NFSTR ITC Runtime Probe v2");
     Log("EXE: %s", exePath);
-    Log("Hotkeys: F6=state+scan, F7=scan+pointer refs, F8=patch live DesertHills strings to BuffaloGap, F9=restore");
+    Log("Hotkeys: F6=state+fast scan, F7=slow scan+pointer refs, F8=IMMEDIATE patch DesertHills->BuffaloGap, F9=restore");
     DumpState();
 
     bool prevF6=false, prevF7=false, prevF8=false, prevF9=false;
@@ -273,7 +317,7 @@ static DWORD WINAPI ProbeThread(LPVOID)
         bool f9 = (GetAsyncKeyState(VK_F9) & 0x8000) != 0;
         if (f6 && !prevF6) { DumpState(); ScanDesertHills(false); }
         if (f7 && !prevF7) { DumpState(); ScanDesertHills(true); }
-        if (f8 && !prevF8) { DumpState(); ScanDesertHills(true); PatchToBuffaloGap(); }
+        if (f8 && !prevF8) { DumpState(); PatchToBuffaloGap(); }
         if (f9 && !prevF9) { RestorePatched(); DumpState(); }
         prevF6=f6; prevF7=f7; prevF8=f8; prevF9=f9;
         Sleep(100);
