@@ -111,8 +111,13 @@ static void Scan()
     gCandidates = FindPersistent();
     Log("---- PERSISTENT DESERT HILLS CANDIDATES: %zu ----", gCandidates.size());
     for (size_t i=0;i<gCandidates.size();++i) Log("  candidate[%zu] = 0x%08X", i, (unsigned)gCandidates[i]);
-    if (gCandidates.size() != 12)
+    if (gCandidates.size() != 12) {
         Log("WARNING: expected 12 persistent candidates on a clean frontend visit; restart before interpreting this test");
+        MessageBeep(MB_ICONHAND);
+    } else {
+        Log("SCAN COMPLETE: 12 candidates cached");
+        MessageBeep(MB_ICONASTERISK);
+    }
 }
 
 static void PatchRange(size_t begin, size_t finish, const char* label)
@@ -140,18 +145,18 @@ static void PatchRange(size_t begin, size_t finish, const char* label)
         }
     }
     Log("PATCH COMPLETE: %s patched=%u", label, patched);
-    Log("IMPORTANT: success means the later LEVEL CHANGE says BuffaloGap. A crash while LEVEL CHANGE remains DesertHills only means this candidate/group is sensitive.");
+    Log("IMPORTANT: success means the later LEVEL CHANGE says BuffaloGap. A crash while LEVEL CHANGE remains DesertHills only means this candidate is sensitive.");
     MessageBeep(patched ? MB_ICONASTERISK : MB_ICONHAND);
 }
 
 static DWORD WINAPI Thread(LPVOID)
 {
     char exe[MAX_PATH]{}; GetModuleFileNameA(nullptr, exe, MAX_PATH);
-    Log("NFSTR ITC Runtime Probe v5 - redirect-vs-crash isolation");
+    Log("NFSTR ITC Runtime Probe v6 - candidates 3/4/5 isolation");
     Log("EXE: %s", exe);
     Log("Use a FRESH GAME LAUNCH for every test.");
-    Log("Hotkeys: F6=scan; F7=C0; F8=C1; F9=C2; F10=C3-5; F11=C6-8; F12=C9-11");
-    bool p6=false,p7=false,p8=false,p9=false,p10=false,p11=false,p12=false;
+    Log("Hotkeys: F6=scan+beep; F7=C3; F8=C4; F9=C5; F10=C1(recheck)");
+    bool p6=false,p7=false,p8=false,p9=false,p10=false;
     std::string last;
     while (gRunning) {
         std::string now=SafeCString(kGameCurrentLevel);
@@ -162,18 +167,14 @@ static DWORD WINAPI Thread(LPVOID)
         bool f8=(GetAsyncKeyState(VK_F8)&0x8000)!=0;
         bool f9=(GetAsyncKeyState(VK_F9)&0x8000)!=0;
         bool f10=(GetAsyncKeyState(VK_F10)&0x8000)!=0;
-        bool f11=(GetAsyncKeyState(VK_F11)&0x8000)!=0;
-        bool f12=(GetAsyncKeyState(VK_F12)&0x8000)!=0;
 
         if (f6&&!p6) Scan();
-        if (f7&&!p7) PatchRange(0,1,"CANDIDATE 0");
-        if (f8&&!p8) PatchRange(1,2,"CANDIDATE 1");
-        if (f9&&!p9) PatchRange(2,3,"CANDIDATE 2");
-        if (f10&&!p10) PatchRange(3,6,"GROUP 3-5");
-        if (f11&&!p11) PatchRange(6,9,"GROUP 6-8");
-        if (f12&&!p12) PatchRange(9,12,"GROUP 9-11");
+        if (f7&&!p7) PatchRange(3,4,"CANDIDATE 3");
+        if (f8&&!p8) PatchRange(4,5,"CANDIDATE 4");
+        if (f9&&!p9) PatchRange(5,6,"CANDIDATE 5");
+        if (f10&&!p10) PatchRange(1,2,"CANDIDATE 1 RECHECK");
 
-        p6=f6;p7=f7;p8=f8;p9=f9;p10=f10;p11=f11;p12=f12;
+        p6=f6;p7=f7;p8=f8;p9=f9;p10=f10;
         Sleep(100);
     }
     return 0;
