@@ -1,0 +1,143 @@
+name: Extract PC San Francisco ITC bundles
+
+on:
+  push:
+    branches:
+      - pc-sf-mesh-rosetta
+    paths:
+      - '.github/workflows/extract-pc-sf-itc.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: pc-sf-itc-extract
+  cancel-in-progress: true
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools
+        run: |
+          set -euxo pipefail
+          python3 -m pip install --user --upgrade gdown
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Download split PC game archive
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p parts
+          cat > parts-manifest.tsv <<'EOF'
+          001	1ElGa6JG-9Y7eAPR5lb2nBPFweflMi63t
+          002	1cZe78AXGSBvFy5E0bQyru1vUWPrhosFw
+          003	10375U1vf9mDH-5LJdS3_A-T6DOkEXPjF
+          004	1yUUI6OS0fMkg2k3m5wBOGfm4AO80Xp-L
+          005	1dGtovC2p9ZbdEXEvC0GlHcSUZ1Y2tFsx
+          006	1Ez10bRv_m2H17xdtIiuFo2HRtdC8DxoG
+          007	1mxAj_DUbJUvr7EL4UnT9TRLKLIl718sS
+          008	1-XSsTyehk_Ag7TqKbPJYav3nPoR8u-Hu
+          009	1HgHDY9EtOOVZw15-pZ5EYNtU3mLlBchf
+          010	100gDW1zjawk4RBi94C7ckrhVbnNJ5ZzF
+          011	15meHYmBxlTlO4WHaoE1XoX3EMJRgNXUF
+          012	1id3_tb6pC3e96v3-An0A-p5J9OzUzcGA
+          013	1BL4702rebmbCiEMojrO_r8j211R_dukZ
+          014	1F5MvKMTfHoo8XZwsZNNrYq8Zz9lbtpWz
+          015	1QJq3BtHZsw2LQgigCQNWyga-xmQEExMy
+          016	14lctaIjA9C-WrvynqaPNj-UIPgglKWKf
+          017	1KQcNDTYGbXZFl43h96fvv-mFZeKlvQj8
+          018	1uGi_4a7B0k4r1a0sl_glg01fGvuDddK-
+          019	1cV4gdL-w8aJGbhb1GJPUuQSCQmtAAOI4
+          020	1wx4vsbNwipSulnbpwW9LhssGpWCQ18ck
+          021	172NdQItICmAxicH8D204BYuzKo1ZOQuf
+          022	1zwnxYW6D2IolqQVzS-t_HbWxjc62-awm
+          023	1cDMyn_EpvenFVsEeJceC7Ze1iWoMBKnJ
+          024	1YN9LhyP3WYk91TQHuLF5wbwTEWu22y_V
+          025	1IMI5-xcPC-UtxTtf76RNl0bWV0SMMJrm
+          026	11anvX4B8YgOMawrJNz2ReU514AVLWoB9
+          027	15Z267FPZQKrzW3_MkuZYI_X19QBnN-JZ
+          028	1K_uUUDKdT1NfHjU657MZAz9GJ1T8S2nv
+          029	1cU5uU3Na8B6F6B8Q6WhzkNnkZLFb3zFP
+          030	1SqpDFFWYdSqn0oiDMDnYVg06RnplRx7m
+          031	1emp8dsR31En5ur9RDWz0UMC-Ozew4nMX
+          032	1vPb6xoZX41G_1r7n0iZ-aku-5mPl8W2O
+          033	154aKx28kvDXvGbwkjZpwSopDBEV0BZDS
+          034	16V44SAWfPQeVgG-8XekJnrro2RKkczGJ
+          035	1IMg1AItyDyALoXnw1O6Dq6JkETuHyEm1
+          036	1AyD3EYMrs_VhKWwX1pFp8kRh3q8JXPfE
+          037	1CKz4bPuQ_NtW85AcjBYCMBNkCnv2-lLQ
+          038	1dwqmLRCcrGhCT1GKZ4iyIkFHfcPg3xCN
+          EOF
+          download_one() {
+            seq="$1"; id="$2"; out="parts/Need for Speed The Run.7z.${seq}"
+            for attempt in 1 2 3; do
+              if gdown "$id" -O "$out" && test -s "$out"; then return 0; fi
+              rm -f "$out"; sleep $((attempt * 5))
+            done
+            return 1
+          }
+          export -f download_one
+          xargs -P 6 -n 2 bash -c 'download_one "$0" "$1"' < parts-manifest.tsv
+      - name: Extract PC San Francisco level files
+        shell: bash
+        run: |
+          set -euxo pipefail
+          archive='parts/Need for Speed The Run.7z.001'
+          mkdir -p sf
+          7z x "$archive" -osf -y \
+            'Data/Win32/_c4/Levels/Level_0100_SanFrancisco/Level_0100_SanFrancisco.toc' \
+            'Data/Win32/_c4/Levels/Level_0100_SanFrancisco/Level_0100_SanFrancisco.sb' \
+            'Update/Patch/Data/Win32/_c4/Levels/Level_0100_SanFrancisco/Level_0100_SanFrancisco.toc' \
+            'Update/Patch/Data/Win32/_c4/Levels/Level_0100_SanFrancisco/Level_0100_SanFrancisco.sb' \
+            'Update/Patch/Data/common.dat'
+      - name: Slice ITC bundle entries
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git clone --depth 1 https://github.com/NicknineTheEagle/Frostbite-Scripts.git frostbite-scripts
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,sys
+          sys.path.insert(0,str(Path('frostbite-scripts/frostbite2').resolve()))
+          import dbo
+          def plain(o):
+              if o is None:return None
+              if hasattr(o,'elems'):return {k:plain(v) for k,v in o.elems.items()}
+              if hasattr(o,'content'):
+                  c=o.content
+                  if isinstance(c,list):return [plain(x) for x in c]
+                  if isinstance(c,(bytes,bytearray)):return c.hex()
+                  if hasattr(c,'format') and callable(c.format):
+                      try:return c.format()
+                      except:pass
+                  if isinstance(c,(str,int,float,bool)) or c is None:return c
+                  return repr(c)
+              return o
+          targets={'cs_itc_1','cs_itc_1_sec_2','cs_itc_1_sec_4','cs_itc_1_sec_5','cs_itc_1_sec_8'}
+          out=Path('pc-itc');out.mkdir()
+          tocs=list(Path('sf').rglob('Level_0100_SanFrancisco.toc'))
+          manifest=[]
+          for toc in tocs:
+              root=plain(dbo.readToc(str(toc))); sb=toc.with_suffix('.sb')
+              source='patch' if 'Update' in toc.parts or 'Patch' in toc.parts else 'base'
+              for e in root.get('bundles',[]):
+                  leaf=str(e.get('id','')).lower().rsplit('/',1)[-1]
+                  if leaf not in targets:continue
+                  off=int(e['offset']);size=int(e['size'])
+                  with sb.open('rb') as f:f.seek(off);data=f.read(size)
+                  fn=f'{source}_{leaf}.bundle-entry'
+                  (out/fn).write_bytes(data)
+                  manifest.append({'source':source,'id':e.get('id'),'entry':e,'file':fn,'bytes':len(data)})
+          patch_common=list(Path('sf').rglob('common.dat'))
+          for p in patch_common:
+              dst=out/'patch_common.dat';dst.write_bytes(p.read_bytes())
+          (out/'manifest.json').write_text(json.dumps(manifest,indent=2))
+          print(json.dumps(manifest,indent=2))
+          PY
+          find pc-itc -type f -printf '%P\t%s\n' | sort
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NFSTR-PC-SF-ITC-Rosetta
+          path: pc-itc/
+          if-no-files-found: error
+          compression-level: 6
