@@ -17,7 +17,6 @@ static const char* kBuffaloGap  = "_c4/Levels/Level_2300_BuffaloGap/Level_2300_B
 static FILE* gLog = nullptr;
 static std::mutex gLogMutex;
 static std::vector<uintptr_t> gCandidates;
-static std::vector<uintptr_t> gPatched;
 static volatile bool gRunning = true;
 
 static void Log(const char* fmt, ...)
@@ -112,30 +111,20 @@ static void Scan()
     gCandidates = FindPersistent();
     Log("---- PERSISTENT DESERT HILLS CANDIDATES: %zu ----", gCandidates.size());
     for (size_t i=0;i<gCandidates.size();++i) Log("  candidate[%zu] = 0x%08X", i, (unsigned)gCandidates[i]);
+    if (gCandidates.size() != 12)
+        Log("WARNING: expected 12 persistent candidates on a clean frontend visit; restart before interpreting this test");
 }
 
-static void Restore()
-{
-    size_t n=std::strlen(kDesertHills)+1;
-    Log("---- RESTORE %zu candidate(s) ----", gPatched.size());
-    for (uintptr_t a: gPatched) {
-        SIZE_T w=0;
-        if (WriteProcessMemory(GetCurrentProcess(), (LPVOID)a, kDesertHills, n, &w) && w==n) Log("  restored 0x%08X", (unsigned)a);
-        else Log("  restore FAILED 0x%08X err=%lu", (unsigned)a, GetLastError());
-    }
-    gPatched.clear();
-}
-
-static void PatchQuarter(unsigned q)
+static void PatchRange(size_t begin, size_t finish, const char* label)
 {
     if (gCandidates.empty()) Scan();
-    if (gCandidates.empty()) { Log("PATCH ABORTED: no persistent candidates"); MessageBeep(MB_ICONHAND); return; }
+    if (gCandidates.size() < finish) {
+        Log("PATCH ABORTED: %s needs indices [%zu,%zu), only %zu candidate(s) available", label, begin, finish, gCandidates.size());
+        MessageBeep(MB_ICONHAND);
+        return;
+    }
 
-    const size_t n = gCandidates.size();
-    size_t begin = (n*q)/4;
-    size_t finish = (n*(q+1))/4;
-    Log("---- PATCH QUARTER %u: indices [%zu,%zu) of %zu ----", q+1, begin, finish, n);
-
+    Log("---- PATCH %s: indices [%zu,%zu) of %zu ----", label, begin, finish, gCandidates.size());
     const size_t oldLen=std::strlen(kDesertHills), newLen=std::strlen(kBuffaloGap);
     std::vector<char> repl(oldLen+1,0); std::memcpy(repl.data(), kBuffaloGap, newLen);
     unsigned patched=0;
@@ -144,37 +133,47 @@ static void PatchQuarter(unsigned q)
         if (!StillSource(a)) { Log("  candidate[%zu] stale/skipped 0x%08X", i, (unsigned)a); continue; }
         SIZE_T w=0;
         if (WriteProcessMemory(GetCurrentProcess(), (LPVOID)a, repl.data(), repl.size(), &w) && w==repl.size()) {
-            gPatched.push_back(a); ++patched; Log("  patched candidate[%zu] 0x%08X", i, (unsigned)a);
-        } else Log("  FAILED candidate[%zu] 0x%08X err=%lu", i, (unsigned)a, GetLastError());
+            ++patched;
+            Log("  patched candidate[%zu] 0x%08X", i, (unsigned)a);
+        } else {
+            Log("  FAILED candidate[%zu] 0x%08X err=%lu", i, (unsigned)a, GetLastError());
+        }
     }
-    Log("PATCH COMPLETE: quarter=%u patched=%u", q+1, patched);
+    Log("PATCH COMPLETE: %s patched=%u", label, patched);
+    Log("IMPORTANT: success means the later LEVEL CHANGE says BuffaloGap. A crash while LEVEL CHANGE remains DesertHills only means this candidate/group is sensitive.");
     MessageBeep(patched ? MB_ICONASTERISK : MB_ICONHAND);
 }
 
 static DWORD WINAPI Thread(LPVOID)
 {
     char exe[MAX_PATH]{}; GetModuleFileNameA(nullptr, exe, MAX_PATH);
-    Log("NFSTR ITC Runtime Probe v4 - persistent quarter isolation");
+    Log("NFSTR ITC Runtime Probe v5 - redirect-vs-crash isolation");
     Log("EXE: %s", exe);
-    Log("Hotkeys: F6=scan; F8=Q1[0-2]; F9=Q2[3-5]; F10=Q3[6-8]; F11=Q4[9-11]; F12=restore");
-    bool p6=false,p8=false,p9=false,p10=false,p11=false,p12=false;
+    Log("Use a FRESH GAME LAUNCH for every test.");
+    Log("Hotkeys: F6=scan; F7=C0; F8=C1; F9=C2; F10=C3-5; F11=C6-8; F12=C9-11");
+    bool p6=false,p7=false,p8=false,p9=false,p10=false,p11=false,p12=false;
     std::string last;
     while (gRunning) {
         std::string now=SafeCString(kGameCurrentLevel);
         if (now!=last && now!="<unreadable>") { Log("LEVEL CHANGE: %s", now.c_str()); last=now; }
+
         bool f6=(GetAsyncKeyState(VK_F6)&0x8000)!=0;
+        bool f7=(GetAsyncKeyState(VK_F7)&0x8000)!=0;
         bool f8=(GetAsyncKeyState(VK_F8)&0x8000)!=0;
         bool f9=(GetAsyncKeyState(VK_F9)&0x8000)!=0;
         bool f10=(GetAsyncKeyState(VK_F10)&0x8000)!=0;
         bool f11=(GetAsyncKeyState(VK_F11)&0x8000)!=0;
         bool f12=(GetAsyncKeyState(VK_F12)&0x8000)!=0;
+
         if (f6&&!p6) Scan();
-        if (f8&&!p8) PatchQuarter(0);
-        if (f9&&!p9) PatchQuarter(1);
-        if (f10&&!p10) PatchQuarter(2);
-        if (f11&&!p11) PatchQuarter(3);
-        if (f12&&!p12) Restore();
-        p6=f6;p8=f8;p9=f9;p10=f10;p11=f11;p12=f12;
+        if (f7&&!p7) PatchRange(0,1,"CANDIDATE 0");
+        if (f8&&!p8) PatchRange(1,2,"CANDIDATE 1");
+        if (f9&&!p9) PatchRange(2,3,"CANDIDATE 2");
+        if (f10&&!p10) PatchRange(3,6,"GROUP 3-5");
+        if (f11&&!p11) PatchRange(6,9,"GROUP 6-8");
+        if (f12&&!p12) PatchRange(9,12,"GROUP 9-11");
+
+        p6=f6;p7=f7;p8=f8;p9=f9;p10=f10;p11=f11;p12=f12;
         Sleep(100);
     }
     return 0;
