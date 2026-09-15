@@ -3,6 +3,7 @@
 #include <psapi.h>
 #include <cstdio>
 #include <cstdint>
+#include <cstdarg>
 #include <cstring>
 #include <vector>
 #include <string>
@@ -52,19 +53,35 @@ static bool IsWritableProtect(DWORD p)
            p == PAGE_EXECUTE_READWRITE || p == PAGE_EXECUTE_WRITECOPY;
 }
 
+static bool ReadSelf(uintptr_t address, void* out, size_t size)
+{
+    SIZE_T got = 0;
+    return ReadProcessMemory(GetCurrentProcess(), reinterpret_cast<LPCVOID>(address), out, size, &got) && got == size;
+}
+
 static std::string SafeCString(uintptr_t address, size_t maxLen = 260)
 {
     if (!address) return "<null>";
-    __try {
-        const char* s = reinterpret_cast<const char*>(address);
-        size_t n = 0;
-        while (n < maxLen && s[n]) ++n;
-        if (n == maxLen) return "<unterminated/unreadable>";
-        return std::string(s, n);
-    }
-    __except (EXCEPTION_EXECUTE_HANDLER) {
+    MEMORY_BASIC_INFORMATION mbi{};
+    if (!VirtualQuery(reinterpret_cast<LPCVOID>(address), &mbi, sizeof(mbi)) ||
+        mbi.State != MEM_COMMIT || !IsReadableProtect(mbi.Protect)) {
         return "<unreadable>";
     }
+
+    const uintptr_t regionEnd = reinterpret_cast<uintptr_t>(mbi.BaseAddress) + mbi.RegionSize;
+    const size_t available = static_cast<size_t>(regionEnd - address);
+    const size_t want = std::min(maxLen, available);
+    if (!want) return "<unreadable>";
+
+    std::vector<char> buf(want);
+    SIZE_T got = 0;
+    if (!ReadProcessMemory(GetCurrentProcess(), reinterpret_cast<LPCVOID>(address), buf.data(), want, &got) || got == 0)
+        return "<unreadable>";
+
+    size_t n = 0;
+    while (n < got && buf[n]) ++n;
+    if (n == got) return "<unterminated/unreadable>";
+    return std::string(buf.data(), n);
 }
 
 static void DumpState()
@@ -75,16 +92,18 @@ static void DumpState()
     Log("global secondary[0x%08X] = %s", (unsigned)kGameSecondaryLevel,
         SafeCString(kGameSecondaryLevel).c_str());
 
-    __try {
-        uintptr_t obj = *reinterpret_cast<uintptr_t*>(kLevelObjectGlobal);
-        Log("level object global [0x%08X] -> 0x%08X", (unsigned)kLevelObjectGlobal, (unsigned)obj);
-        if (obj) {
-            uintptr_t p = *reinterpret_cast<uintptr_t*>(obj + 0x9C);
-            Log("level object +0x9C -> 0x%08X = %s", (unsigned)p, SafeCString(p).c_str());
-        }
+    uintptr_t obj = 0;
+    if (!ReadSelf(kLevelObjectGlobal, &obj, sizeof(obj))) {
+        Log("level object global read failed");
+        return;
     }
-    __except (EXCEPTION_EXECUTE_HANDLER) {
-        Log("level object read failed");
+    Log("level object global [0x%08X] -> 0x%08X", (unsigned)kLevelObjectGlobal, (unsigned)obj);
+    if (obj) {
+        uintptr_t levelName = 0;
+        if (ReadSelf(obj + 0x9C, &levelName, sizeof(levelName)))
+            Log("level object +0x9C -> 0x%08X = %s", (unsigned)levelName, SafeCString(levelName).c_str());
+        else
+            Log("level object +0x9C read failed");
     }
 }
 
@@ -92,6 +111,8 @@ static std::vector<uintptr_t> FindWritableCString(const char* needle)
 {
     std::vector<uintptr_t> hits;
     const size_t needleLen = std::strlen(needle);
+    constexpr size_t kChunk = 1u << 20;
+
     SYSTEM_INFO si{};
     GetSystemInfo(&si);
     uintptr_t p = reinterpret_cast<uintptr_t>(si.lpMinimumApplicationAddress);
@@ -104,18 +125,23 @@ static std::vector<uintptr_t> FindWritableCString(const char* needle)
         const size_t size = mbi.RegionSize;
 
         if (mbi.State == MEM_COMMIT && mbi.Type != MEM_IMAGE && IsWritableProtect(mbi.Protect) && size > needleLen) {
-            __try {
-                const unsigned char* data = reinterpret_cast<const unsigned char*>(base);
-                for (size_t i = 0; i + needleLen < size; ++i) {
-                    if (data[i] == static_cast<unsigned char>(needle[0]) &&
-                        std::memcmp(data + i, needle, needleLen) == 0 && data[i + needleLen] == 0) {
-                        hits.push_back(base + i);
-                        i += needleLen;
+            size_t offset = 0;
+            std::vector<unsigned char> buf(kChunk + needleLen + 1);
+            while (offset < size) {
+                const size_t toRead = std::min(kChunk + needleLen, size - offset);
+                SIZE_T got = 0;
+                if (ReadProcessMemory(GetCurrentProcess(), reinterpret_cast<LPCVOID>(base + offset), buf.data(), toRead, &got) && got > needleLen) {
+                    const size_t primary = std::min(kChunk, static_cast<size_t>(got));
+                    for (size_t i = 0; i < primary && i + needleLen < got; ++i) {
+                        if (buf[i] == static_cast<unsigned char>(needle[0]) &&
+                            std::memcmp(buf.data() + i, needle, needleLen) == 0 && buf[i + needleLen] == 0) {
+                            hits.push_back(base + offset + i);
+                            i += needleLen;
+                        }
                     }
                 }
-            }
-            __except (EXCEPTION_EXECUTE_HANDLER) {
-                // Region changed or became inaccessible; skip it.
+                if (size - offset <= kChunk) break;
+                offset += kChunk;
             }
         }
 
@@ -131,6 +157,7 @@ static void DumpPointerRefs(uintptr_t target)
     GetSystemInfo(&si);
     uintptr_t p = reinterpret_cast<uintptr_t>(si.lpMinimumApplicationAddress);
     const uintptr_t end = reinterpret_cast<uintptr_t>(si.lpMaximumApplicationAddress);
+    constexpr size_t kChunk = 1u << 20;
     unsigned count = 0;
 
     while (p < end) {
@@ -138,24 +165,31 @@ static void DumpPointerRefs(uintptr_t target)
         if (!VirtualQuery(reinterpret_cast<LPCVOID>(p), &mbi, sizeof(mbi))) break;
         const uintptr_t base = reinterpret_cast<uintptr_t>(mbi.BaseAddress);
         const size_t size = mbi.RegionSize;
+
         if (mbi.State == MEM_COMMIT && mbi.Type != MEM_IMAGE && IsReadableProtect(mbi.Protect) && size >= sizeof(uint32_t)) {
-            __try {
-                const uint32_t* q = reinterpret_cast<const uint32_t*>(base);
-                const size_t n = size / sizeof(uint32_t);
-                for (size_t i = 0; i < n; ++i) {
-                    if (q[i] == static_cast<uint32_t>(target)) {
-                        uintptr_t at = base + i * 4;
-                        Log("    ptrref 0x%08X -> 0x%08X", (unsigned)at, (unsigned)target);
-                        ++count;
-                        if (count >= 64) {
-                            Log("    ptrref limit reached (64)");
-                            return;
+            size_t offset = 0;
+            std::vector<uint32_t> buf(kChunk / sizeof(uint32_t));
+            while (offset < size) {
+                const size_t toRead = std::min(kChunk, size - offset);
+                SIZE_T got = 0;
+                if (ReadProcessMemory(GetCurrentProcess(), reinterpret_cast<LPCVOID>(base + offset), buf.data(), toRead, &got) && got >= 4) {
+                    const size_t n = got / 4;
+                    for (size_t i = 0; i < n; ++i) {
+                        if (buf[i] == static_cast<uint32_t>(target)) {
+                            uintptr_t at = base + offset + i * 4;
+                            Log("    ptrref 0x%08X -> 0x%08X", (unsigned)at, (unsigned)target);
+                            if (++count >= 64) {
+                                Log("    ptrref limit reached (64)");
+                                return;
+                            }
                         }
                     }
                 }
+                if (size - offset <= kChunk) break;
+                offset += kChunk;
             }
-            __except (EXCEPTION_EXECUTE_HANDLER) {}
         }
+
         if (base + size <= p) break;
         p = base + size;
     }
@@ -186,18 +220,18 @@ static void PatchToBuffaloGap()
         Log("internal error: replacement is longer than source");
         return;
     }
+
+    std::vector<char> replacement(oldLen + 1, 0);
+    std::memcpy(replacement.data(), kBuffaloGap, newLen);
     for (uintptr_t addr : hits) {
-        __try {
-            std::memcpy(reinterpret_cast<void*>(addr), kBuffaloGap, newLen);
-            std::memset(reinterpret_cast<void*>(addr + newLen), 0, oldLen + 1 - newLen);
+        SIZE_T written = 0;
+        if (WriteProcessMemory(GetCurrentProcess(), reinterpret_cast<LPVOID>(addr), replacement.data(), replacement.size(), &written) && written == replacement.size()) {
             gPatched.push_back(addr);
             Log("  patched 0x%08X", (unsigned)addr);
-        }
-        __except (EXCEPTION_EXECUTE_HANDLER) {
-            Log("  FAILED to patch 0x%08X", (unsigned)addr);
+        } else {
+            Log("  FAILED to patch 0x%08X error=%lu written=%zu", (unsigned)addr, GetLastError(), (size_t)written);
         }
     }
-    FlushInstructionCache(GetCurrentProcess(), nullptr, 0);
     MessageBeep(MB_OK);
 }
 
@@ -206,13 +240,11 @@ static void RestorePatched()
     const size_t oldLen = std::strlen(kDesertHills);
     Log("---- RESTORE REQUEST: %zu recorded patch(es) ----", gPatched.size());
     for (uintptr_t addr : gPatched) {
-        __try {
-            std::memcpy(reinterpret_cast<void*>(addr), kDesertHills, oldLen + 1);
+        SIZE_T written = 0;
+        if (WriteProcessMemory(GetCurrentProcess(), reinterpret_cast<LPVOID>(addr), kDesertHills, oldLen + 1, &written) && written == oldLen + 1)
             Log("  restored 0x%08X", (unsigned)addr);
-        }
-        __except (EXCEPTION_EXECUTE_HANDLER) {
-            Log("  FAILED to restore 0x%08X", (unsigned)addr);
-        }
+        else
+            Log("  FAILED to restore 0x%08X error=%lu", (unsigned)addr, GetLastError());
     }
     gPatched.clear();
 }
@@ -253,16 +285,11 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID)
 {
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(module);
-        gLog = std::fopen("NFSTR_ITC_RuntimeProbe.log", "w");
+        fopen_s(&gLog, "NFSTR_ITC_RuntimeProbe.log", "w");
         HANDLE h = CreateThread(nullptr, 0, ProbeThread, nullptr, 0, nullptr);
         if (h) CloseHandle(h);
     } else if (reason == DLL_PROCESS_DETACH) {
         gRunning = false;
-        if (gLog) {
-            Log("DLL detach");
-            std::fclose(gLog);
-            gLog = nullptr;
-        }
     }
     return TRUE;
 }
