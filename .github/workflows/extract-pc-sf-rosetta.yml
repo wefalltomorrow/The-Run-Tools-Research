@@ -1,0 +1,167 @@
+name: Extract PC San Francisco mesh Rosetta
+
+on:
+  push:
+    branches:
+      - pc-sf-mesh-rosetta
+  workflow_dispatch:
+
+concurrency:
+  group: pc-sf-mesh-rosetta
+  cancel-in-progress: true
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          set -euxo pipefail
+          command -v 7z
+          python3 -m pip install --user --upgrade gdown
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Download split PC game archive
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p parts
+          cat > parts-manifest.tsv <<'EOF'
+          001	1ElGa6JG-9Y7eAPR5lb2nBPFweflMi63t
+          002	1cZe78AXGSBvFy5E0bQyru1vUWPrhosFw
+          003	10375U1vf9mDH-5LJdS3_A-T6DOkEXPjF
+          004	1yUUI6OS0fMkg2k3m5wBOGfm4AO80Xp-L
+          005	1dGtovC2p9ZbdEXEvC0GlHcSUZ1Y2tFsx
+          006	1Ez10bRv_m2H17xdtIiuFo2HRtdC8DxoG
+          007	1mxAj_DUbJUvr7EL4UnT9TRLKLIl718sS
+          008	1-XSsTyehk_Ag7TqKbPJYav3nPoR8u-Hu
+          009	1HgHDY9EtOOVZw15-pZ5EYNtU3mLlBchf
+          010	100gDW1zjawk4RBi94C7ckrhVbnNJ5ZzF
+          011	15meHYmBxlTlO4WHaoE1XoX3EMJRgNXUF
+          012	1id3_tb6pC3e96v3-An0A-p5J9OzUzcGA
+          013	1BL4702rebmbCiEMojrO_r8j211R_dukZ
+          014	1F5MvKMTfHoo8XZwsZNNrYq8Zz9lbtpWz
+          015	1QJq3BtHZsw2LQgigCQNWyga-xmQEExMy
+          016	14lctaIjA9C-WrvynqaPNj-UIPgglKWKf
+          017	1KQcNDTYGbXZFl43h96fvv-mFZeKlvQj8
+          018	1uGi_4a7B0k4r1a0sl_glg01fGvuDddK-
+          019	1cV4gdL-w8aJGbhb1GJPUuQSCQmtAAOI4
+          020	1wx4vsbNwipSulnbpwW9LhssGpWCQ18ck
+          021	172NdQItICmAxicH8D204BYuzKo1ZOQuf
+          022	1zwnxYW6D2IolqQVzS-t_HbWxjc62-awm
+          023	1cDMyn_EpvenFVsEeJceC7Ze1iWoMBKnJ
+          024	1YN9LhyP3WYk91TQHuLF5wbwTEWu22y_V
+          025	1IMI5-xcPC-UtxTtf76RNl0bWV0SMMJrm
+          026	11anvX4B8YgOMawrJNz2ReU514AVLWoB9
+          027	15Z267FPZQKrzW3_MkuZYI_X19QBnN-JZ
+          028	1K_uUUDKdT1NfHjU657MZAz9GJ1T8S2nv
+          029	1cU5uU3Na8B6F6B8Q6WhzkNnkZLFb3zFP
+          030	1SqpDFFWYdSqn0oiDMDnYVg06RnplRx7m
+          031	1emp8dsR31En5ur9RDWz0UMC-Ozew4nMX
+          032	1vPb6xoZX41G_1r7n0iZ-aku-5mPl8W2O
+          033	154aKx28kvDXvGbwkjZpwSopDBEV0BZDS
+          034	16V44SAWfPQeVgG-8XekJnrro2RKkczGJ
+          035	1IMg1AItyDyALoXnw1O6Dq6JkETuHyEm1
+          036	1AyD3EYMrs_VhKWwX1pFp8kRh3q8JXPfE
+          037	1CKz4bPuQ_NtW85AcjBYCMBNkCnv2-lLQ
+          038	1dwqmLRCcrGhCT1GKZ4iyIkFHfcPg3xCN
+          EOF
+
+          download_one() {
+            seq="$1"
+            id="$2"
+            out="parts/Need for Speed The Run.7z.${seq}"
+            for attempt in 1 2 3; do
+              if gdown "$id" -O "$out"; then
+                test -s "$out" && return 0
+              fi
+              rm -f "$out"
+              sleep $((attempt * 5))
+            done
+            return 1
+          }
+          export -f download_one
+          xargs -P 6 -n 2 bash -c 'download_one "$0" "$1"' < parts-manifest.tsv
+          test "$(find parts -maxdepth 1 -type f -name 'Need for Speed The Run.7z.*' | wc -l)" -eq 38
+
+      - name: Extract San Francisco base and patch files
+        shell: bash
+        run: |
+          set -euxo pipefail
+          archive='parts/Need for Speed The Run.7z.001'
+          mkdir -p sf
+          7z x "$archive" -osf -y \
+            '*Level_0100_SanFrancisco.toc' \
+            '*Level_0100_SanFrancisco.sb' \
+            '*Update/Patch/Data/common.dat'
+          find sf -type f -printf '%P\t%s\n' | sort
+
+      - name: Slice base CS_SLE_4 bundle
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git clone --depth 1 https://github.com/NicknineTheEagle/Frostbite-Scripts.git frostbite-scripts
+          python3 - <<'PY'
+          from pathlib import Path
+          import json, sys
+          sys.path.insert(0, str(Path('frostbite-scripts/frostbite2').resolve()))
+          import dbo
+
+          def plain(obj):
+              if obj is None:
+                  return None
+              if hasattr(obj, 'elems'):
+                  return {k: plain(v) for k, v in obj.elems.items()}
+              if hasattr(obj, 'content'):
+                  c = obj.content
+                  if isinstance(c, list): return [plain(x) for x in c]
+                  if isinstance(c, (bytes, bytearray)): return c.hex()
+                  if hasattr(c, 'format') and callable(c.format):
+                      try: return c.format()
+                      except Exception: pass
+                  if isinstance(c, (str, int, float, bool)) or c is None: return c
+                  return repr(c)
+              return obj
+
+          roots = list(Path('sf').rglob('Level_0100_SanFrancisco.toc'))
+          base_tocs = [p for p in roots if 'Update' not in p.parts and 'Patch' not in p.parts]
+          if len(base_tocs) != 1:
+              raise SystemExit(f'Expected one base TOC, found: {base_tocs}')
+          toc = base_tocs[0]
+          sb = toc.with_suffix('.sb')
+          root = plain(dbo.readToc(str(toc)))
+          matches = [b for b in root.get('bundles', []) if str(b.get('id','')).lower().endswith('/cs_sle_4')]
+          if len(matches) != 1:
+              raise SystemExit(f'Expected one CS_SLE_4 entry, got {matches}')
+          e = matches[0]
+          off, size = int(e['offset']), int(e['size'])
+          out = Path('rosetta'); out.mkdir(exist_ok=True)
+          with sb.open('rb') as f:
+              f.seek(off); data=f.read(size)
+          (out/'PC_base_CS_SLE_4.bundle').write_bytes(data)
+          manifest = {'toc':str(toc),'sb':str(sb),'entry':e,'bundle_bytes':len(data)}
+          (out/'manifest.json').write_text(json.dumps(manifest,indent=2))
+          print(json.dumps(manifest,indent=2))
+
+          # Keep the small patched San Francisco files and common.dat too; they are useful for final-bundle reconstruction.
+          for p in Path('sf').rglob('*'):
+              if p.is_file() and ('Update' in p.parts or 'Patch' in p.parts):
+                  rel = p.relative_to('sf')
+                  dst = out/'patch'/rel
+                  dst.parent.mkdir(parents=True,exist_ok=True)
+                  dst.write_bytes(p.read_bytes())
+          PY
+          find rosetta -type f -printf '%P\t%s\n' | sort
+
+      - name: Upload Rosetta artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NFSTR-PC-SF-Mesh-Rosetta
+          path: rosetta/
+          if-no-files-found: error
+          compression-level: 6
