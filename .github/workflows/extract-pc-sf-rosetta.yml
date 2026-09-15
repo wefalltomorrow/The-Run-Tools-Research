@@ -96,9 +96,11 @@ jobs:
           archive='parts/Need for Speed The Run.7z.001'
           mkdir -p sf
           7z x "$archive" -osf -y \
-            '*Level_0100_SanFrancisco.toc' \
-            '*Level_0100_SanFrancisco.sb' \
-            '*Update/Patch/Data/common.dat'
+            'Data/Win32/_c4/Levels/Level_0100_SanFrancisco/Level_0100_SanFrancisco.toc' \
+            'Data/Win32/_c4/Levels/Level_0100_SanFrancisco/Level_0100_SanFrancisco.sb' \
+            'Update/Patch/Data/Win32/_c4/Levels/Level_0100_SanFrancisco/Level_0100_SanFrancisco.toc' \
+            'Update/Patch/Data/Win32/_c4/Levels/Level_0100_SanFrancisco/Level_0100_SanFrancisco.sb' \
+            'Update/Patch/Data/common.dat'
           find sf -type f -printf '%P\t%s\n' | sort
 
       - name: Slice base CS_SLE_4 bundle
@@ -148,7 +150,6 @@ jobs:
           (out/'manifest.json').write_text(json.dumps(manifest,indent=2))
           print(json.dumps(manifest,indent=2))
 
-          # Keep the small patched San Francisco files and common.dat too; they are useful for final-bundle reconstruction.
           for p in Path('sf').rglob('*'):
               if p.is_file() and ('Update' in p.parts or 'Patch' in p.parts):
                   rel = p.relative_to('sf')
