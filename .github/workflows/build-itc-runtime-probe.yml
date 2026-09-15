@@ -1,0 +1,58 @@
+name: Build ITC Runtime Probe
+
+on:
+  push:
+    branches:
+      - itc-runtime-probe
+    paths:
+      - 'runtime-probe/**'
+      - '.github/workflows/build-itc-runtime-probe.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure x86
+        run: cmake -S runtime-probe -B runtime-probe/build -A Win32 -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build runtime-probe/build --config Release --parallel
+
+      - name: Stage artifact
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force runtime-probe/artifact | Out-Null
+          Copy-Item runtime-probe/build/Release/NFSTR_ITC_RuntimeProbe.asi runtime-probe/artifact/
+          @'
+          NFSTR ITC Runtime Probe v1
+
+          Put NFSTR_ITC_RuntimeProbe.asi next to Need For Speed The Run.exe in your TEST copy.
+          Keep NFSTR_LANOnlineHelper disabled for this test.
+
+          Hotkeys:
+            F6 = dump live level state and count writable Desert Hills strings
+            F7 = same, plus pointer references to each live string
+            F8 = replace live writable Desert Hills level-path copies with Buffalo Gap
+            F9 = restore any strings patched by F8
+
+          Test procedure:
+          1. Start the game and open Challenge Series > Limited Edition > Make Tracks.
+          2. Stay on the event details screen BEFORE selecting/launching it.
+          3. Press F7 once. Wait ~2 seconds.
+          4. Press F8 once. You should hear the Windows notification beep.
+          5. Launch Make Tracks normally.
+          6. Exit the game afterwards and upload NFSTR_ITC_RuntimeProbe.log.
+
+          Canary result:
+          - If Make Tracks loads Buffalo Gap instead of Desert Hills, live runtime level redirection is proven.
+          - If it remains Desert Hills, the log tells us whether the challenge LevelName was present/deserialized and what references owned it.
+          '@ | Set-Content runtime-probe/artifact/README.txt -Encoding UTF8
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NFSTR-ITC-RuntimeProbe-v1
+          path: runtime-probe/artifact/*
+          if-no-files-found: error
