@@ -152,8 +152,11 @@ static void PatchRange(size_t begin, size_t finish, const char* label)
 static DWORD WINAPI Thread(LPVOID)
 {
     char exe[MAX_PATH]{}; GetModuleFileNameA(nullptr, exe, MAX_PATH);
-    Log("NFSTR ITC Runtime Probe v6 - candidates 3/4/5 isolation");
+    Log("============================================================");
+    Log("===== NEW GAME SESSION | PID %lu =====", GetCurrentProcessId());
+    Log("NFSTR ITC Runtime Probe v7 - persistent multi-session log");
     Log("EXE: %s", exe);
+    Log("Log mode: APPEND (previous sessions are preserved)");
     Log("Use a FRESH GAME LAUNCH for every test.");
     Log("Hotkeys: F6=scan+beep; F7=C3; F8=C4; F9=C5; F10=C1(recheck)");
     bool p6=false,p7=false,p8=false,p9=false,p10=false;
@@ -184,8 +187,11 @@ BOOL APIENTRY DllMain(HMODULE m,DWORD r,LPVOID)
 {
     if (r==DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(m);
-        fopen_s(&gLog,"NFSTR_ITC_RuntimeProbe.log","w");
+        fopen_s(&gLog,"NFSTR_ITC_RuntimeProbe.log","a");
         HANDLE h=CreateThread(nullptr,0,Thread,nullptr,0,nullptr); if(h) CloseHandle(h);
-    } else if (r==DLL_PROCESS_DETACH) gRunning=false;
+    } else if (r==DLL_PROCESS_DETACH) {
+        gRunning=false;
+        if (gLog) { std::fflush(gLog); std::fclose(gLog); gLog=nullptr; }
+    }
     return TRUE;
 }
